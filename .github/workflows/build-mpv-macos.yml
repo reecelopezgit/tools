@@ -1,0 +1,44 @@
+name: Build self-contained mpv (macOS)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Install mpv + dylibbundler
+        run: brew install mpv dylibbundler
+
+      - name: Bundle self-contained mpv
+        run: |
+          set -e
+          MPV="$(which mpv)"
+          echo "mpv: $MPV"
+          file "$MPV"
+          lipo -archs "$MPV"
+          mkdir -p "bundle-${{ matrix.arch }}"
+          cp "$MPV" "bundle-${{ matrix.arch }}/mpv"
+          dylibbundler -cd -b -x "bundle-${{ matrix.arch }}/mpv" -d "bundle-${{ matrix.arch }}/libs"
+          codesign -fs - "bundle-${{ matrix.arch }}/mpv"
+          for f in "bundle-${{ matrix.arch }}/libs/"*.dylib; do codesign -fs - "$f"; done
+          echo "=== verification ==="
+          file "bundle-${{ matrix.arch }}/mpv"
+          lipo -archs "bundle-${{ matrix.arch }}/mpv"
+          otool -L "bundle-${{ matrix.arch }}/mpv"
+
+      - name: Tar bundle
+        run: tar -czf "mpv-${{ matrix.arch }}.tar.gz" -C "bundle-${{ matrix.arch }}" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-${{ matrix.arch }}
+          path: mpv-${{ matrix.arch }}.tar.gz
