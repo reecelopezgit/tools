@@ -1,4 +1,4 @@
-name: Build self-contained mpv (macOS)
+name: Build self-contained arm64 mpv (macOS)
 
 on:
   workflow_dispatch:
@@ -7,49 +7,29 @@ jobs:
   build:
     runs-on: macos-14
     steps:
-      - name: Install mpv + dylibbundler (arm64, native)
+      - name: Install mpv + dylibbundler
         run: brew install mpv dylibbundler
 
-      - name: Bundle arm64
+      - name: Bundle self-contained arm64 mpv
         run: |
           set -e
           MPV="$(which mpv)"
-          echo "mpv: $MPV"; file "$MPV"; lipo -archs "$MPV"
-          mkdir -p bundle-arm64
-          cp "$MPV" bundle-arm64/mpv
-          dylibbundler -cd -b -x bundle-arm64/mpv -d bundle-arm64/libs
-          codesign -fs - bundle-arm64/mpv
-          for f in bundle-arm64/libs/*.dylib; do codesign -fs - "$f"; done
-          echo "=== arm64 verify ==="; file bundle-arm64/mpv; lipo -archs bundle-arm64/mpv; otool -L bundle-arm64/mpv
-          tar -czf mpv-arm64.tar.gz -C bundle-arm64 .
+          echo "mpv: $MPV"
+          file "$MPV"
+          lipo -archs "$MPV"
+          mkdir -p bundle
+          cp "$MPV" bundle/mpv
+          dylibbundler -cd -b -x bundle/mpv -d bundle/libs
+          codesign -fs - bundle/mpv
+          for f in bundle/libs/*.dylib; do codesign -fs - "$f"; done
+          echo "=== verify ==="
+          file bundle/mpv
+          lipo -archs bundle/mpv
+          otool -L bundle/mpv
+          tar -czf mpv-arm64.tar.gz -C bundle .
 
-      - name: Install x86_64 brew under Rosetta
-        run: |
-          set -e
-          arch -x86_64 /bin/bash -c '$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)'
-          arch -x86_64 /usr/local/bin/brew install mpv dylibbundler
-
-      - name: Bundle x64 (Rosetta build)
-        run: |
-          set -e
-          MPV="/usr/local/bin/mpv"
-          echo "mpv: $MPV"; file "$MPV"; lipo -archs "$MPV"
-          mkdir -p bundle-x64
-          cp "$MPV" bundle-x64/mpv
-          dylibbundler -cd -b -x bundle-x64/mpv -d bundle-x64/libs
-          codesign -fs - bundle-x64/mpv
-          for f in bundle-x64/libs/*.dylib; do codesign -fs - "$f"; done
-          echo "=== x64 verify ==="; file bundle-x64/mpv; lipo -archs bundle-x64/mpv; otool -L bundle-x64/mpv
-          tar -czf mpv-x64.tar.gz -C bundle-x64 .
-
-      - name: Upload arm64
+      - name: Upload arm64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: mpv-arm64
           path: mpv-arm64.tar.gz
-
-      - name: Upload x64
-        uses: actions/upload-artifact@v4
-        with:
-          name: mpv-x64
-          path: mpv-x64.tar.gz
