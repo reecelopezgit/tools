@@ -7,8 +7,17 @@ jobs:
   build:
     runs-on: macos-14
     steps:
-      - name: Install mpv + dylibbundler
-        run: brew install mpv dylibbundler
+      - name: Install MPV + DASH-enabled FFmpeg
+        run: |
+          set -e
+          brew tap homebrew-ffmpeg/ffmpeg
+          brew install mpv dylibbundler
+          # Homebrew/core's FFmpeg omits the MPEG-DASH demuxer. Keep the MPV
+          # executable, then replace its FFmpeg runtime with the same-version
+          # full build that enables DASH and libxml2.
+          brew uninstall --ignore-dependencies ffmpeg
+          brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-libxml2
+          ffmpeg -demuxers | grep -E '^[[:space:]]*D[[:space:]]+dash[[:space:]]'
 
       - name: Bundle self-contained arm64 mpv
         run: |
@@ -20,6 +29,19 @@ jobs:
           mkdir -p bundle
           cp "$MPV" bundle/mpv
           dylibbundler -cd -b -x bundle/mpv -d bundle/libs
+          # Verify the bundled libavformat registers the MPEG-DASH demuxer,
+          # not only FFmpeg's unrelated WebM DASH manifest handler.
+          printf '%s\n' '<MPD xmlns="urn:mpeg:DASH:schema:MPD:2011" type="static"><Period/></MPD>' > dash-probe.mpd
+          set +e
+          bundle/mpv --no-config --vo=null --ao=null --demuxer-lavf-format=dash dash-probe.mpd > dash-probe.log 2>&1
+          probe_status=$?
+          set -e
+          if grep -q 'Unknown lavf format dash' dash-probe.log; then
+            cat dash-probe.log
+            echo 'Bundled MPV does not contain the MPEG-DASH demuxer.' >&2
+            exit 1
+          fi
+          echo "DASH demuxer probe exited $probe_status after recognizing the format (expected for the intentionally incomplete MPD)."
           codesign -fs - bundle/mpv
           for f in bundle/libs/*.dylib; do codesign -fs - "$f"; done
           echo "=== verify ==="
