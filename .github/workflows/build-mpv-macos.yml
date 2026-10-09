@@ -31,20 +31,29 @@ jobs:
           dylibbundler -cd -b -x bundle/mpv -d bundle/libs
           # Verify the bundled libavformat registers the MPEG-DASH demuxer,
           # not only FFmpeg's unrelated WebM DASH manifest handler.
-          printf '%s\n' '<MPD xmlns="urn:mpeg:DASH:schema:MPD:2011" type="static"><Period/></MPD>' > dash-probe.mpd
+          cat > dash-probe.mpd <<'MPD'
+          <?xml version="1.0"?>
+          <MPD xmlns="urn:mpeg:DASH:schema:MPD:2011" type="static" mediaPresentationDuration="PT1S" minBufferTime="PT1S">
+            <Period duration="PT1S">
+              <AdaptationSet id="0" mimeType="video/mp4" contentType="video">
+                <Representation id="test" bandwidth="1" codecs="avc1.640028" width="16" height="16"><BaseURL>missing.mp4</BaseURL></Representation>
+              </AdaptationSet>
+            </Period>
+          </MPD>
+          MPD
           mkdir -p "bundle/FlixWow Player.app/Contents/MacOS"
           cp bundle/mpv "bundle/FlixWow Player.app/Contents/MacOS/FlixWowPlayer"
           ln -s ../../libs "bundle/FlixWow Player.app/Contents/libs"
           set +e
-          "bundle/FlixWow Player.app/Contents/MacOS/FlixWowPlayer" --no-config --vo=null --ao=null --demuxer-lavf-format=dash dash-probe.mpd > dash-probe.log 2>&1
+          "bundle/FlixWow Player.app/Contents/MacOS/FlixWowPlayer" --no-config --vo=null --ao=null --demuxer-lavf-format=dash --msg-level=all=debug dash-probe.mpd > dash-probe.log 2>&1
           probe_status=$?
           set -e
-          if grep -q 'Unknown lavf format dash' dash-probe.log; then
+          if grep -Eq 'Unknown lavf format dash|Library not loaded|dyld\[' dash-probe.log || ! grep -q 'DASH request for url' dash-probe.log || ! grep -q 'missing.mp4' dash-probe.log; then
             cat dash-probe.log
-            echo 'Bundled MPV does not contain the MPEG-DASH demuxer.' >&2
+            echo 'Bundled MPV failed to load or parse through the MPEG-DASH demuxer.' >&2
             exit 1
           fi
-          echo "DASH demuxer probe exited $probe_status after recognizing the format (expected for the intentionally incomplete MPD)."
+          echo "DASH demuxer and bundled libraries loaded; probe exited $probe_status at the expected missing test fragment."
           codesign -fs - bundle/mpv
           for f in bundle/libs/*.dylib; do codesign -fs - "$f"; done
           echo "=== verify ==="
