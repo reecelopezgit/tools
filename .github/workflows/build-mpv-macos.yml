@@ -32,8 +32,11 @@ jobs:
           # Verify the bundled libavformat registers the MPEG-DASH demuxer,
           # not only FFmpeg's unrelated WebM DASH manifest handler.
           printf '%s\n' '<MPD xmlns="urn:mpeg:DASH:schema:MPD:2011" type="static"><Period/></MPD>' > dash-probe.mpd
+          mkdir -p "bundle/FlixWow Player.app/Contents/MacOS"
+          cp bundle/mpv "bundle/FlixWow Player.app/Contents/MacOS/FlixWowPlayer"
+          ln -s ../../libs "bundle/FlixWow Player.app/Contents/libs"
           set +e
-          bundle/mpv --no-config --vo=null --ao=null --demuxer-lavf-format=dash dash-probe.mpd > dash-probe.log 2>&1
+          "bundle/FlixWow Player.app/Contents/MacOS/FlixWowPlayer" --no-config --vo=null --ao=null --demuxer-lavf-format=dash dash-probe.mpd > dash-probe.log 2>&1
           probe_status=$?
           set -e
           if grep -q 'Unknown lavf format dash' dash-probe.log; then
